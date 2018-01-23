@@ -354,11 +354,11 @@ func (t *SimpleChaincode) pay(stub shim.ChaincodeStubInterface, args []string) p
 
 	strAccountTo, err := stub.GetState(To)
 	if err != nil {
-		return shim.Error("Failed to get user 2 state")
+		return shim.Error("Failed to get receiver state")
 	}
 
 	if strAccountTo == nil {
-		return shim.Error("Receiver not found")
+		return shim.Error("Receiver wallet not found")
 	}
 
 	err = json.Unmarshal(strAccountTo, &stateTo)
@@ -484,7 +484,7 @@ func (t *SimpleChaincode) addProject(stub shim.ChaincodeStubInterface, args []st
 
 	err = stub.PutState(pName, []byte(strState))
 	if err != nil {
-		return shim.Error("Failed to add Projectstate")
+		return shim.Error("Failed to add Project state")
 	}
 
 	err = stub.PutState(pk, []byte(strUserState))
@@ -535,6 +535,7 @@ func (t *SimpleChaincode) donate(stub shim.ChaincodeStubInterface, args []string
 	for key, value := range oPState.Users {
 		if value != 0 {
 		}
+
 		if key == pk && value == 100 {
 			return shim.Error("Failed to donate yourself")
 		}
