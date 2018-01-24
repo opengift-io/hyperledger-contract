@@ -2,7 +2,7 @@
 OPENGIFT MAIN CONTRACT v0.1 01.2018
 */
 
-package main
+package hyperledger
 
 import (
 	"fmt"
