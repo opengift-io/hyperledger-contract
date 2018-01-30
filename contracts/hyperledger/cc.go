@@ -2,7 +2,7 @@
 OPENGIFT MAIN CONTRACT v0.1 01.2018
 */
 
-package hyperledger
+package main
 
 import (
 	"fmt"
@@ -21,13 +21,21 @@ var logger = shim.NewLogger("opengift")
 type SimpleChaincode struct {
 }
 
+type donation struct {
+	Wallet    string
+	Sum       float64
+	GoalCode  string
+	Confirmed bool
+}
+
 type clientState struct {
 	Balance  float64
 	Projects map[string]float64
 }
 
 type projectState struct {
-	Users map[string]int
+	Users   map[string]int
+	Donates []donation
 }
 
 type offer struct {
@@ -41,7 +49,6 @@ type offer struct {
 
 func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Info("########### OPENGIFT Init ###########")
-
 
 	return shim.Success(nil)
 }
@@ -83,6 +90,9 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 
 	if function == "donate" {
 		return t.donate(stub, args)
+	}
+	if function == "confirmGoal" {
+		return t.confirmGoal(stub, args)
 	}
 	if function == "closeOffer" {
 		return t.closeOffer(stub, args)
@@ -496,15 +506,21 @@ func (t *SimpleChaincode) addProject(stub shim.ChaincodeStubInterface, args []st
 }
 
 func (t *SimpleChaincode) donate(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
+	if len(args) < 2 {
+		return shim.Error("Incorrect number of arguments. Expecting minimum 2")
 	}
+
+	var goalCode string
+
+	if len(args) == 3 {
+		goalCode = args[2]
+	}
+
+	pk, err := cid.GetX509CertificatePublicKey(stub)
 
 	X, err := strconv.ParseFloat(args[1], 64)
 
 	project := args[0]
-
-	pk, err := cid.GetX509CertificatePublicKey(stub)
 
 	Avalbytes, err := stub.GetState(pk)
 	if err != nil {
@@ -531,6 +547,36 @@ func (t *SimpleChaincode) donate(stub shim.ChaincodeStubInterface, args []string
 	}
 
 	err = json.Unmarshal(pState, &oPState)
+
+	if goalCode != "" {
+		donate := donation{
+			Wallet:   pk,
+			Sum:      X,
+			GoalCode: goalCode}
+
+		oPState.Donates = append(oPState.Donates, donate)
+
+		projectStrNew, er := json.Marshal(&oPState)
+		if er != nil {
+			return shim.Error("Failed to marshal project state")
+		}
+		er = stub.PutState(project, []byte(projectStrNew))
+		if er != nil {
+			return shim.Error("Failed to add project state")
+		}
+
+		strStateNew, er := json.Marshal(&cs)
+		if er != nil {
+			return shim.Error("Failed to marshal state")
+		}
+		er = stub.PutState(pk, []byte(strStateNew))
+		if er != nil {
+			return shim.Error("Failed to add state")
+		}
+
+		return shim.Success([]byte(pk))
+	}
+
 	updatedCurrent := 0
 	for key, value := range oPState.Users {
 		if value != 0 {
@@ -577,6 +623,106 @@ func (t *SimpleChaincode) donate(stub shim.ChaincodeStubInterface, args []string
 	}
 
 	return shim.Success([]byte(pk))
+}
+
+func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	if len(args) != 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+
+	project := args[0]
+	goalCode := args[1]
+	pk, err := cid.GetX509CertificatePublicKey(stub)
+
+	pState, err := stub.GetState(project)
+	if err != nil {
+		return shim.Error("Failed to get project state")
+	}
+	var oPState projectState
+	err = json.Unmarshal(pState, &oPState)
+	if err != nil {
+		return shim.Error("Cant unmarshal project")
+	}
+
+	donConfirmed := false
+	for i := range oPState.Donates {
+		curDonation := oPState.Donates[i]
+		if curDonation.GoalCode == goalCode && curDonation.Wallet == pk {
+			oPState.Donates[i].Confirmed = true
+			donConfirmed = true
+		}
+	}
+
+	if !donConfirmed {
+		return shim.Error("No have such donation")
+	}
+
+	sumGoal := 0.0
+	sumGoalConfirmed := 0.0
+	for i := range oPState.Donates {
+		curDonation := oPState.Donates[i]
+		if curDonation.GoalCode == goalCode {
+			sumGoal += curDonation.Sum
+			if curDonation.Confirmed {
+				sumGoalConfirmed += curDonation.Sum
+			}
+		}
+	}
+
+	if sumGoalConfirmed > (sumGoal / 2) {
+		var donatesNew []donation
+
+		for i := range oPState.Donates {
+			curDonation := oPState.Donates[i]
+			if curDonation.GoalCode == goalCode {
+				for key, value := range oPState.Users {
+					if value != 0 {
+					}
+
+					if key == pk && value == 100 {
+						return shim.Error("Failed to donate yourself")
+					}
+
+					Avalbytes, err := stub.GetState(key)
+					if err != nil {
+						jsonResp := "{\"Error\":\"Failed to get state for user " + pk + "\"}"
+						return shim.Error(jsonResp)
+					}
+
+					var csP clientState
+					err = json.Unmarshal(Avalbytes, &csP)
+
+					csP.Balance = csP.Balance + (curDonation.Sum * float64(oPState.Users[key]) / 100.0)
+
+					strStateNew, er := json.Marshal(&csP)
+					if er != nil {
+						return shim.Error("Failed to marshal state")
+					}
+					er = stub.PutState(key, []byte(strStateNew))
+					if er != nil {
+						return shim.Error("Failed to add state")
+					}
+				}
+
+			} else {
+				donatesNew = append(donatesNew, curDonation)
+			}
+		}
+
+		oPState.Donates = donatesNew
+		strPStateNew, er := json.Marshal(&oPState)
+		if er != nil {
+			return shim.Error("Failed to marshal project state")
+		}
+		er = stub.PutState(project, []byte(strPStateNew))
+		if er != nil {
+			return shim.Error("Failed to add project state")
+		}
+
+		return shim.Success([]byte("success"))
+	}
+
+	return shim.Success([]byte("partially success"))
 }
 
 func (t *SimpleChaincode) getKey(stub shim.ChaincodeStubInterface, args []string) pb.Response {
