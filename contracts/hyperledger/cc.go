@@ -150,16 +150,6 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 //
 //	return shim.Success([]byte("ok"))
 //}
-func transfer(stateFrom clientState, stateTo clientState, sum float64, stub shim.ChaincodeStubInterface) bool {
-	if (stateFrom.Balance < sum) {
-		return false
-	}
-
-	stateFrom.Balance = stateFrom.Balance - sum
-	stateTo.Balance = stateTo.Balance + sum
-
-	return true
-}
 
 func (t *SimpleChaincode) getOffers(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	startKey := "OFFER_000000000000000000000000"
@@ -353,6 +343,10 @@ func (t *SimpleChaincode) pay(stub shim.ChaincodeStubInterface, args []string) p
 		return shim.Error("You cant pay yourself")
 	}
 
+	if len(To) < 64 {
+		return shim.Error("Bad wallet")
+	}
+
 	X, err = strconv.ParseFloat(args[1], 64)
 	if err != nil {
 		return shim.Error("Invalid transaction amount, expecting a integer value")
@@ -420,9 +414,12 @@ func (t *SimpleChaincode) pay(stub shim.ChaincodeStubInterface, args []string) p
 		}
 	}
 
-	if transfer(stateFrom, stateTo, X, stub) == false {
+	if (stateFrom.Balance < X) {
 		return shim.Error("Transfer error")
 	}
+
+	stateFrom.Balance = stateFrom.Balance - X
+	stateTo.Balance = stateTo.Balance + X
 
 	stateFromStr, err := json.Marshal(stateFrom)
 	err = stub.PutState(pk, []byte(stateFromStr))
@@ -548,7 +545,7 @@ func (t *SimpleChaincode) donate(stub shim.ChaincodeStubInterface, args []string
 
 	err = json.Unmarshal(pState, &oPState)
 
-	if goalCode != "" {
+	if goalCode != "" && len(goalCode) > 0 {
 		donate := donation{
 			Wallet:   pk,
 			Sum:      X,
