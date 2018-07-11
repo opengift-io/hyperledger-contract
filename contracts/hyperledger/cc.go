@@ -623,12 +623,14 @@ func (t *SimpleChaincode) donate(stub shim.ChaincodeStubInterface, args []string
 }
 
 func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
+	if len(args) != 3 {
+		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 
 	project := args[0]
 	goalCode := args[1]
+	winnerWallet := args[2]
+
 	pk, err := cid.GetX509CertificatePublicKey(stub)
 
 	pState, err := stub.GetState(project)
@@ -672,15 +674,11 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 		for i := range oPState.Donates {
 			curDonation := oPState.Donates[i]
 			if curDonation.GoalCode == goalCode {
-				for key, value := range oPState.Users {
-					if value != 0 {
-					}
 
-					if key == pk && value == 100 {
-						return shim.Error("Failed to donate yourself")
-					}
+				if winnerWallet == pk {
+					return shim.Error("Failed to donate yourself")
 
-					Avalbytes, err := stub.GetState(key)
+					Avalbytes, err := stub.GetState(winnerWallet)
 					if err != nil {
 						jsonResp := "{\"Error\":\"Failed to get state for user " + pk + "\"}"
 						return shim.Error(jsonResp)
@@ -689,13 +687,13 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 					var csP clientState
 					err = json.Unmarshal(Avalbytes, &csP)
 
-					csP.Balance = csP.Balance + (curDonation.Sum * float64(oPState.Users[key]) / 100.0)
+					csP.Balance = csP.Balance + (curDonation.Sum * float64(oPState.Users[winnerWallet]) / 100.0)
 
 					strStateNew, er := json.Marshal(&csP)
 					if er != nil {
 						return shim.Error("Failed to marshal state")
 					}
-					er = stub.PutState(key, []byte(strStateNew))
+					er = stub.PutState(winnerWallet, []byte(strStateNew))
 					if er != nil {
 						return shim.Error("Failed to add state")
 					}
