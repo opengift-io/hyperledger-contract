@@ -673,12 +673,19 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 
 		for i := range oPState.Donates {
 			curDonation := oPState.Donates[i]
+			sumWinner := curDonation.Sum * 0.8
+			sumOthers := curDonation.Sum * 0.2
+
 			if curDonation.GoalCode == goalCode {
+				for key, value := range oPState.Users {
+					if value != 0 {
+					}
 
-				if winnerWallet == pk {
-					return shim.Error("Failed to donate yourself")
+					if key == pk && value == 100 {
+						return shim.Error("Failed to donate yourself")
+					}
 
-					Avalbytes, err := stub.GetState(winnerWallet)
+					Avalbytes, err := stub.GetState(key)
 					if err != nil {
 						jsonResp := "{\"Error\":\"Failed to get state for user " + pk + "\"}"
 						return shim.Error(jsonResp)
@@ -687,22 +694,44 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 					var csP clientState
 					err = json.Unmarshal(Avalbytes, &csP)
 
-					csP.Balance = csP.Balance + (curDonation.Sum * float64(oPState.Users[winnerWallet]) / 100.0)
+					csP.Balance = csP.Balance + (sumOthers * float64(oPState.Users[key]) / 100.0)
 
 					strStateNew, er := json.Marshal(&csP)
 					if er != nil {
 						return shim.Error("Failed to marshal state")
 					}
-					er = stub.PutState(winnerWallet, []byte(strStateNew))
+					er = stub.PutState(key, []byte(strStateNew))
 					if er != nil {
 						return shim.Error("Failed to add state")
 					}
+				}
+
+
+				Avalbytes, err := stub.GetState(winnerWallet)
+				if err != nil {
+					jsonResp := "{\"Error\":\"Failed to get state for user " + pk + "\"}"
+					return shim.Error(jsonResp)
+				}
+
+				var csP clientState
+				err = json.Unmarshal(Avalbytes, &csP)
+
+				csP.Balance = csP.Balance + sumWinner
+
+				strStateNew, er := json.Marshal(&csP)
+				if er != nil {
+					return shim.Error("Failed to marshal state")
+				}
+				er = stub.PutState(winnerWallet, []byte(strStateNew))
+				if er != nil {
+					return shim.Error("Failed to add state")
 				}
 
 			} else {
 				donatesNew = append(donatesNew, curDonation)
 			}
 		}
+
 
 		oPState.Donates = donatesNew
 		strPStateNew, er := json.Marshal(&oPState)
