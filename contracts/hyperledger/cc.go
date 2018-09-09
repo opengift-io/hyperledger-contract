@@ -622,10 +622,35 @@ func (t *SimpleChaincode) donate(stub shim.ChaincodeStubInterface, args []string
 	return shim.Success([]byte(pk))
 }
 
+func (t *SimpleChaincode) addBalance(stub shim.ChaincodeStubInterface, wallet string, sum float64) bool {
+	Avalbytes, err := stub.GetState(wallet)
+	if err != nil {
+		return false
+	}
+
+	var csP clientState
+	err = json.Unmarshal(Avalbytes, &csP)
+
+	csP.Balance = csP.Balance + sum
+
+	strStateNew, er := json.Marshal(&csP)
+	if er != nil {
+		return false
+	}
+	er = stub.PutState(wallet, []byte(strStateNew))
+	if er != nil {
+		return false
+	}
+
+	return true
+}
+
 func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	if len(args) != 3 {
 		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
+
+	opengiftWallet := "1a683721d5c86a3b5efad46a1b42651ab2bc5e5ea2634f6cd198a5bf029f39d5"
 
 	project := args[0]
 	goalCode := args[1]
@@ -670,62 +695,38 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 
 	if sumGoalConfirmed > (sumGoal / 2) {
 		var donatesNew []donation
+		var curSum float64
+		var addingResult bool
 
 		for i := range oPState.Donates {
 			curDonation := oPState.Donates[i]
-			sumWinner := curDonation.Sum * 0.8
-			sumOthers := curDonation.Sum * 0.2
+
+			sumOthers := curDonation.Sum * 0.1
+			sumOpenGift := curDonation.Sum * 0.05
+			sumWinner := curDonation.Sum - sumOpenGift - sumOthers
 
 			if curDonation.GoalCode == goalCode {
 				for key, value := range oPState.Users {
 					if value != 0 {
 					}
 
-					if key == pk && value == 100 {
-						return shim.Error("Failed to donate yourself")
-					}
+					//if key == pk && value == 100 {
+					//	return shim.Error("Failed to donate yourself")
+					//}
 
-					Avalbytes, err := stub.GetState(key)
-					if err != nil {
-						jsonResp := "{\"Error\":\"Failed to get state for user " + pk + "\"}"
-						return shim.Error(jsonResp)
-					}
+					curSum = sumOthers * float64(oPState.Users[key]) / 100.0
 
-					var csP clientState
-					err = json.Unmarshal(Avalbytes, &csP)
-
-					csP.Balance = csP.Balance + (sumOthers * float64(oPState.Users[key]) / 100.0)
-
-					strStateNew, er := json.Marshal(&csP)
-					if er != nil {
-						return shim.Error("Failed to marshal state")
-					}
-					er = stub.PutState(key, []byte(strStateNew))
-					if er != nil {
-						return shim.Error("Failed to add state")
+					addingResult = t.addBalance(stub, key, curSum)
+					if addingResult == false {
+						return shim.Error("Failed to add balance to " + key)
 					}
 				}
 
-
-				Avalbytes, err := stub.GetState(winnerWallet)
-				if err != nil {
-					jsonResp := "{\"Error\":\"Failed to get state for user " + pk + "\"}"
-					return shim.Error(jsonResp)
+				addingResult = t.addBalance(stub, winnerWallet, sumWinner)
+				if addingResult == false {
+					return shim.Error("Failed to add balance to " + winnerWallet)
 				}
-
-				var csP clientState
-				err = json.Unmarshal(Avalbytes, &csP)
-
-				csP.Balance = csP.Balance + sumWinner
-
-				strStateNew, er := json.Marshal(&csP)
-				if er != nil {
-					return shim.Error("Failed to marshal state")
-				}
-				er = stub.PutState(winnerWallet, []byte(strStateNew))
-				if er != nil {
-					return shim.Error("Failed to add state")
-				}
+				t.addBalance(stub, opengiftWallet, sumOpenGift)
 
 			} else {
 				donatesNew = append(donatesNew, curDonation)
