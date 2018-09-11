@@ -650,6 +650,8 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 
+	arBalances := make(map[string]float64)
+
 	opengiftWallet := "1a683721d5c86a3b5efad46a1b42651ab2bc5e5ea2634f6cd198a5bf029f39d5"
 
 	project := args[0]
@@ -696,7 +698,7 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 	if sumGoalConfirmed > (sumGoal / 2) {
 		var donatesNew []donation
 		var curSum float64
-		var addingResult bool
+		//var addingResult bool
 
 		for i := range oPState.Donates {
 			curDonation := oPState.Donates[i]
@@ -705,27 +707,22 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 			sumOpenGift := curDonation.Sum * 0.05
 			sumWinner := curDonation.Sum - sumOpenGift - sumOthers
 
+			arBalances[winnerWallet] = sumWinner
 			if curDonation.GoalCode == goalCode {
 				for key, value := range oPState.Users {
 					if value != 0 {
 					}
 
-					//if key == pk && value == 100 {
-					//	return shim.Error("Failed to donate yourself")
-					//}
-
 					curSum = sumOthers * float64(oPState.Users[key]) / 100.0
 
-					addingResult = t.addBalance(stub, key, curSum)
-					if addingResult == false {
-						return shim.Error("Failed to add balance to " + key)
+					balance, ok := arBalances[key]
+					if ok {
+						arBalances[key] = balance + curSum
+					} else {
+						arBalances[key] = curSum
 					}
 				}
 
-				addingResult = t.addBalance(stub, winnerWallet, sumWinner)
-				if addingResult == false {
-					return shim.Error("Failed to add balance to " + winnerWallet)
-				}
 				t.addBalance(stub, opengiftWallet, sumOpenGift)
 
 			} else {
@@ -733,6 +730,9 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 			}
 		}
 
+		for key, value := range arBalances {
+			t.addBalance(stub, key, value)
+		}
 
 		oPState.Donates = donatesNew
 		strPStateNew, er := json.Marshal(&oPState)
