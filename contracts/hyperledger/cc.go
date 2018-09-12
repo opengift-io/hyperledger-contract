@@ -656,7 +656,11 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 
 	project := args[0]
 	goalCode := args[1]
-	winnerWallet := args[2]
+	winnerWallet := ""
+
+	if len(args) > 2 {
+		winnerWallet = args[2]
+	}
 
 	pk, err := cid.GetX509CertificatePublicKey(stub)
 
@@ -695,20 +699,29 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 		}
 	}
 
-	if sumGoalConfirmed > (sumGoal / 2) {
-		var donatesNew []donation
-		var curSum float64
-		//var addingResult bool
+	if winnerWallet != "" {
+		if sumGoalConfirmed > (sumGoal / 2) {
+			return shim.Error("Not enough votes")
+		}
+	}
 
-		for i := range oPState.Donates {
-			curDonation := oPState.Donates[i]
+	var donatesNew []donation
+	var curSum float64
+	//var addingResult bool
 
-			sumOthers := curDonation.Sum * 0.1
-			sumOpenGift := curDonation.Sum * 0.05
-			sumWinner := curDonation.Sum - sumOpenGift - sumOthers
+	for i := range oPState.Donates {
+		curDonation := oPState.Donates[i]
 
+		sumOthers := curDonation.Sum * 0.1
+		sumOpenGift := curDonation.Sum * 0.05
+		sumWinner := curDonation.Sum - sumOpenGift - sumOthers
+
+		if winnerWallet != "" {
 			arBalances[winnerWallet] = sumWinner
-			if curDonation.GoalCode == goalCode {
+		}
+
+		if curDonation.GoalCode == goalCode {
+			if winnerWallet != "" {
 				for key, value := range oPState.Users {
 					if value != 0 {
 					}
@@ -724,30 +737,32 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 				}
 
 				t.addBalance(stub, opengiftWallet, sumOpenGift)
-
 			} else {
-				donatesNew = append(donatesNew, curDonation)
+				arBalances[curDonation.Wallet] = curDonation.Sum
 			}
+		} else {
+			donatesNew = append(donatesNew, curDonation)
 		}
-
-		for key, value := range arBalances {
-			t.addBalance(stub, key, value)
-		}
-
-		oPState.Donates = donatesNew
-		strPStateNew, er := json.Marshal(&oPState)
-		if er != nil {
-			return shim.Error("Failed to marshal project state")
-		}
-		er = stub.PutState(project, []byte(strPStateNew))
-		if er != nil {
-			return shim.Error("Failed to add project state")
-		}
-
-		return shim.Success([]byte("success"))
 	}
 
-	return shim.Success([]byte("partially success"))
+	for key, value := range arBalances {
+		t.addBalance(stub, key, value)
+	}
+
+	oPState.Donates = donatesNew
+	strPStateNew, er := json.Marshal(&oPState)
+	if er != nil {
+		return shim.Error("Failed to marshal project state")
+	}
+	er = stub.PutState(project, []byte(strPStateNew))
+	if er != nil {
+		return shim.Error("Failed to add project state")
+	}
+
+	return shim.Success([]byte("success"))
+
+
+	//return shim.Success([]byte("partially success"))
 }
 
 func (t *SimpleChaincode) getKey(stub shim.ChaincodeStubInterface, args []string) pb.Response {
