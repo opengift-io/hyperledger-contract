@@ -700,7 +700,7 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 	}
 
 	if winnerWallet != "" {
-		if sumGoalConfirmed > (sumGoal / 2) {
+		if sumGoalConfirmed < (sumGoal / 2) {
 			return shim.Error("Not enough votes")
 		}
 	}
