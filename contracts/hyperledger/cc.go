@@ -103,9 +103,9 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	if function == "getOffers" {
 		return t.getOffers(stub, args)
 	}
-	//	if function == "firstPay" {
-	//		return t.firstPay(stub, args)
-	//	}
+	if function == "dump" {
+		return t.dump(stub, args)
+	}
 
 	strError := "Unknown action, check the first argument, must be one of 'delete', 'query', 'pay', 'getKey', 'donate', or 'move'. But got: %v"
 	logger.Errorf(strError, args[0])
@@ -841,6 +841,26 @@ func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string)
 
 	return shim.Success(Avalbytes)
 }
+
+
+func (t *SimpleChaincode) dump(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	keysIter, err := stub.GetStateByRange("", "")
+	if err != nil {
+		return shim.Error(fmt.Sprintf("Dump failed. Error: %s", err))
+	}
+	defer keysIter.Close()
+	fmt.Printf(">>>>> BEGIN DUMP\n")
+	for keysIter.HasNext() {
+		response, iterErr := keysIter.Next()
+		if iterErr != nil {
+			return shim.Error(fmt.Sprintf("Dump failed. Error: %s", err))
+		}
+		fmt.Printf(">> %v %v\n", response.Key, response.Value)
+	}
+	fmt.Printf(">>>>> END DUMP\n")
+	return shim.Success(nil)
+}
+
 
 func main() {
 	err := shim.Start(new(SimpleChaincode))
