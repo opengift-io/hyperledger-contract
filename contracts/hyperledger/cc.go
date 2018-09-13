@@ -717,7 +717,12 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 		sumWinner := curDonation.Sum - sumOpenGift - sumOthers
 
 		if winnerWallet != "" {
-			arBalances[winnerWallet] = sumWinner
+			balance, ok := arBalances[winnerWallet]
+			if ok {
+				arBalances[winnerWallet] = balance + sumWinner
+			} else {
+				arBalances[winnerWallet] = sumWinner
+			}
 		}
 
 		if curDonation.GoalCode == goalCode {
