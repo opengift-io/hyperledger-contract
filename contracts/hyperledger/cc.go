@@ -47,6 +47,21 @@ type offer struct {
 	ClosedBy  string
 }
 
+func in_array(val string, array []string) (exists bool, index int) {
+	exists = false
+	index = -1;
+
+	for i, v := range array {
+		if val == v {
+			index = i
+			exists = true
+			return
+		}
+	}
+
+	return
+}
+
 func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Info("########### OPENGIFT Init ###########")
 
@@ -300,6 +315,10 @@ func (t *SimpleChaincode) move(stub shim.ChaincodeStubInterface, args []string) 
 
 	oPState.Users[A] = oPState.Users[A] - X
 	oPState.Users[B] = oPState.Users[B] + X
+
+	if oPState.Users[A] == 0 {
+		delete(oPState.Users, A)
+	}
 
 	if oPState.Users[A] < 0 || oPState.Users[B] < 0 {
 		return shim.Error("The balance is over")
@@ -689,9 +708,11 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 
 	sumGoal := 0.0
 	sumGoalConfirmed := 0.0
+
 	for i := range oPState.Donates {
 		curDonation := oPState.Donates[i]
 		if curDonation.GoalCode == goalCode {
+
 			sumGoal += curDonation.Sum
 			if curDonation.Confirmed {
 				sumGoalConfirmed += curDonation.Sum
@@ -699,34 +720,52 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 		}
 	}
 
+	arBonuses := map[string]int {
+
+	}
+
 	if winnerWallet != "" {
 		if sumGoalConfirmed < (sumGoal / 2) {
 			return shim.Error("Not enough votes")
 		}
+		arBonuses[winnerWallet] = 0
 	}
 
 	var donatesNew []donation
 	var curSum float64
 	//var addingResult bool
+	var arDonors []string
+
+
+	donorIndex := 0
 
 	for i := range oPState.Donates {
 		curDonation := oPState.Donates[i]
 
-		sumOthers := curDonation.Sum * 0.1
-		sumOpenGift := curDonation.Sum * 0.05
-		sumWinner := curDonation.Sum - sumOpenGift - sumOthers
-
-		if winnerWallet != "" {
-			balance, ok := arBalances[winnerWallet]
-			if ok {
-				arBalances[winnerWallet] = balance + sumWinner
-			} else {
-				arBalances[winnerWallet] = sumWinner
-			}
-		}
-
 		if curDonation.GoalCode == goalCode {
+			sumOthers := curDonation.Sum * 0.1
+			sumOpenGift := curDonation.Sum * 0.05
+			sumWinner := curDonation.Sum - sumOpenGift - sumOthers
+
 			if winnerWallet != "" {
+				exists, _ := in_array(curDonation.Wallet, arDonors)
+				if exists == false {
+					arDonors = append(arDonors, curDonation.Wallet)
+					donorIndex += 1
+					if donorIndex > 1 {
+						arBonuses[curDonation.Wallet] = donorIndex * 2
+						arBonuses[winnerWallet] = arBonuses[winnerWallet] + (donorIndex * 2)
+					}
+				}
+
+
+				balance, ok := arBalances[winnerWallet]
+				if ok {
+					arBalances[winnerWallet] = balance + sumWinner
+				} else {
+					arBalances[winnerWallet] = sumWinner
+				}
+
 				for key, value := range oPState.Users {
 					if value != 0 {
 					}
@@ -743,7 +782,12 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 
 				t.addBalance(stub, opengiftWallet, sumOpenGift)
 			} else {
-				arBalances[curDonation.Wallet] = curDonation.Sum
+				balance, ok := arBalances[curDonation.Wallet]
+				if ok {
+					arBalances[curDonation.Wallet] = balance + curDonation.Sum
+				} else {
+					arBalances[curDonation.Wallet] = curDonation.Sum
+				}
 			}
 		} else {
 			donatesNew = append(donatesNew, curDonation)
@@ -752,6 +796,17 @@ func (t *SimpleChaincode) confirmGoal(stub shim.ChaincodeStubInterface, args []s
 
 	for key, value := range arBalances {
 		t.addBalance(stub, key, value)
+	}
+
+	if len(arBonuses) > 0 {
+		for key, value := range arBonuses {
+			balance, ok := oPState.Users[key]
+			if ok {
+				oPState.Users[key] = balance + value
+			} else {
+				oPState.Users[key] = value
+			}
+		}
 	}
 
 	oPState.Donates = donatesNew
