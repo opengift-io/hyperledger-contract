@@ -73,7 +73,7 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	logger.Info("########### OPENGIFT Invoke ###########")
 
 	function, args := stub.GetFunctionAndParameters()
-	logger.Infof(">>>>> %s %v\n", function, args)
+	logger.Infof(">>>>> %s\n%s %v\n", stub.GetTxID(), function, args)
 
 	//	if function == "delete" {
 	//		// Deletes an entity from its state
